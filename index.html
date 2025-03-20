@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravador de Áudio com Transcrição e Processamento</title>
+    <!-- PWA elementos -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#3498db">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Transcritor">
+    <link rel="apple-touch-icon" href="./icons/icon-152x152.png">
+    <!-- Fim PWA elementos -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+            border: none;
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        button.active {
+            background-color: #2ecc71;
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        button#stopRecording {
+            background-color: #e74c3c;
+        }
+        button#stopRecording:disabled {
+            background-color: #95a5a6;
+        }
+        button#processText {
+            background-color: #9b59b6;
+        }
+        button#processText.active {
+            background-color: #8e44ad;
+        }
+        #status, #error {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #status {
+            background-color: #e6f7ff;
+            border-left: 4px solid #3498db;
+        }
+        #error {
+            background-color: #ffe6e6;
+            color: #cc0000;
+            display: none;
+            border-left: 4px solid #e74c3c;
+        }
+        #transcription, #processedOutput {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            background-color: white;
+            transition: all 0.3s ease;
+        }
+        .editable {
+            outline: none;
+            position: relative;
+        }
+        .editable:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+        }
+        .editable:empty:before {
+            content: "Clique para editar...";
+            color: #aaa;
+            font-style: italic;
+        }
+        .editable-highlight {
+            animation: highlight 2s ease;
+        }
+        @keyframes highlight {
+            0% { background-color: #fff; }
+            25% { background-color: #e6f7ff; }
+            75% { background-color: #e6f7ff; }
+            100% { background-color: #fff; }
+        }
+        .editable-indicator {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-left: 10px;
+            font-style: italic;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .api-key-container {
+            margin-bottom: 15px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .processing-options {
+            margin: 15px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        h1, h3 {
+            color: #2c3e50;
+        }
+        h3 {
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+        }
+        .hidden {
+            display: none;
+        }
+        input[type="radio"] {
+            margin-right: 5px;
+        }
+        label {
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+        label:hover {
+            background-color: #f0f0f0;
+        }
+        input[type="radio"]:checked + label {
+            background-color: #e6f7ff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        #recordingTime {
+            font-family: monospace;
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        input[type="password"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            width: 300px;
+        }
+        /* Estilo para a barra de status do PWA */
+        #pwaInstallPrompt {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #3498db;
+            color: white;
+            padding: 12px;
+            text-align: center;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+        #pwaInstallPrompt button {
+            background: white;
+            color: #3498db;
+            border: none;
+            padding: 8px 15px;
+            margin-left: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Gravador de Áudio com Transcrição e Processamento</h1>
+    
+    <!-- Banner de instalação PWA -->
+    <div id="pwaInstallPrompt">
+        Instale este app no seu dispositivo!
+        <button id="installButton">Instalar</button>
+        <button id="dismissButton">Agora não</button>
+    </div>
+    
+    <div class="api-key-container">
+        <h3>Configuração da API OpenAI</h3>
+        <div>
+            <label for="apiKey">Chave API da OpenAI:</label>
+            <input type="password" id="apiKey" placeholder="Digite sua chave API da OpenAI" style="width: 300px;">
+            <button id="saveApiKey">Salvar chave</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div>
+            <button id="startRecording">Iniciar Gravação</button>
+            <button id="stopRecording" disabled>Parar Gravação</button>
+            <span id="recordingTime" style="margin-left: 10px;"></span>
+        </div>
+        
+        <div id="status">Pronto para gravar. Clique em "Iniciar Gravação".</div>
+        <div id="error"></div>
+        
+        <h3>Texto Transcrito: <span class="editable-indicator">(Editável - clique para modificar)</span></h3>
+        <div id="transcription" class="editable" contenteditable="true"></div>
+        
+        <div class="processing-options">
+            <h3>Processamento do Texto:</h3>
+            <div style="margin-bottom: 15px;">
+                <div style="display: inline-block; margin-right: 15px;">
+                    <input type="radio" id="optionSummary" name="processingOption" value="summary" checked>
+                    <label for="optionSummary">Resumo</label>
+                </div>
+                
+                <div style="display: inline-block; margin-right: 15px;">
+                    <input type="radio" id="optionList" name="processingOption" value="list">
+                    <label for="optionList">Lista de Tópicos</label>
+                </div>
+                
+                <div style="display: inline-block;">
+                    <input type="radio" id="optionMindMap" name="processingOption" value="mindmap">
+                    <label for="optionMindMap">Mapa Mental</label>
+                </div>
+            </div>
+            <button id="processText" disabled>Processar Texto</button>
+        </div>
+        
+        <h3>Resultado do Processamento: <span class="editable-indicator">(Editável - clique para modificar)</span></h3>
+        <div id="processedOutput" class="editable" contenteditable="true"></div>
+    </div>
+
+    <!-- Script para registrar o service worker -->
+    <script src="./register-sw.js"></script>
+    
+    <script>
+        // Variáveis globais
+        let mediaRecorder;
+        let audioChunks = [];
+        let recordingStartTime;
+        let recordingTimer;
+        let transcribedText = "";
+        
+        // Elementos do DOM
+        const startButton = document.getElementById('startRecording');
+        const stopButton = document.getElementById('stopRecording');
+        const statusDiv = document.getElementById('status');
+        const errorDiv = document.getElementById('error');
+        const transcriptionDiv = document.getElementById('transcription');
+        const processTextButton = document.getElementById('processText');
+        const processedOutputDiv = document.getElementById('processedOutput');
+        const recordingTimeSpan = document.getElementById('recordingTime');
+        const apiKeyInput = document.getElementById('apiKey');
+        const saveApiKeyButton = document.getElementById('saveApiKey');
+        const pwaInstallPrompt = document.getElementById('pwaInstallPrompt');
+        const installButton = document.getElementById('installButton');
+        const dismissButton = document.getElementById('dismissButton');
+        
+        // Variável para armazenar o evento beforeinstallprompt
+        let deferredPrompt;
+        
+        // Detectar se o app já está instalado ou pode ser instalado
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Previne o comportamento padrão
+            e.preventDefault();
+            // Armazena o evento para que possa ser acionado mais tarde
+            deferredPrompt = e;
+            // Mostra o banner de instalação
+            pwaInstallPrompt.style.display = 'block';
+        });
+        
+        // Lidar com o botão de instalação
+        installButton.addEventListener('click', async () => {
+            if (!deferredPrompt) {
+                return;
+            }
+            // Mostra o prompt de instalação
+            deferredPrompt.prompt();
+            // Espera pelo resultado
+            const { outcome } = await deferredPrompt.userChoice;
+            // Registra o resultado
+            console.log(`Usuário ${outcome === 'accepted' ? 'aceitou' : 'recusou'} a instalação`);
+            // Limpa a variável, pois o prompt só pode ser usado uma vez
+            deferredPrompt = null;
+            // Esconde o banner
+            pwaInstallPrompt.style.display = 'none';
+        });
+        
+        // Lidar com o botão de dispensar
+        dismissButton.addEventListener('click', () => {
+            pwaInstallPrompt.style.display = 'none';
+        });
+        
+        // Verificar se o app já está instalado
+        window.addEventListener('appinstalled', () => {
+            // Esconde o banner
+            pwaInstallPrompt.style.display = 'none';
+            deferredPrompt = null;
+            console.log('PWA foi instalado');
+        });
+        
+        // Carregar a chave API do localStorage
+        function loadApiKey() {
+            const savedApiKey = localStorage.getItem('openai_api_key');
+            if (savedApiKey) {
+                apiKeyInput.value = savedApiKey;
+                return true;
+            }
+            return false;
+        }
+        
+        // Salvar a chave API no localStorage
+        saveApiKeyButton.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey && apiKey.startsWith("sk-")) {
+                localStorage.setItem('openai_api_key', apiKey);
+                updateStatus("Chave API salva com sucesso!");
+            } else {
+                showError("Chave API inválida. Deve começar com 'sk-'");
+            }
+        });
+        
+        // Atualizar status
+        function updateStatus(message, isError = false) {
+            if (isError) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+            } else {
+                statusDiv.textContent = message;
+                errorDiv.style.display = 'none';
+            }
+        }
+        
+        // Mostrar erro
+        function showError(message) {
+            updateStatus(message, true);
+        }
+        
+        // Atualizar o tempo de gravação
+        function updateRecordingTime() {
+            const now = new Date();
+            const elapsedSeconds = Math.floor((now - recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsedSeconds / 60);
+            const seconds = elapsedSeconds % 60;
+            recordingTimeSpan.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // Iniciar gravação
+        startButton.addEventListener('click', async () => {
+            try {
+                // Verificar se temos uma chave API válida
+                const apiKey = apiKeyInput.value.trim();
+                if (!apiKey || !apiKey.startsWith("sk-")) {
+                    showError("Chave API da OpenAI não encontrada. Por favor, forneça uma chave válida.");
+                    return;
+                }
+                
+                // Visual feedback - adicionando classe active
+                startButton.classList.add('active');
+                
+                // Limpar gravações anteriores
+                audioChunks = [];
+                transcriptionDiv.textContent = "";
+                processedOutputDiv.textContent = "";
+                processTextButton.disabled = true;
+                
+                // Solicitar acesso ao microfone
+                updateStatus("Solicitando acesso ao microfone...");
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Configurar o gravador
+                mediaRecorder = new MediaRecorder(stream);
+                
+                // Armazenar os chunks de áudio
+                mediaRecorder.addEventListener('dataavailable', event => {
+                    audioChunks.push(event.data);
+                });
+                
+                // Quando a gravação parar
+                mediaRecorder.addEventListener('stop', async () => {
+                    // Parar o timer
+                    clearInterval(recordingTimer);
+                    
+                    // Atualizar UI
+                    startButton.disabled = false;
+                    startButton.classList.remove('active');
+                    stopButton.disabled = true;
+                    updateStatus("Gravação finalizada. Transcrevendo áudio...");
+                    
+                    try {
+                        // Criar um blob de áudio
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        
+                        // Transcrever o áudio
+                        await transcribeAudio(audioBlob);
+                        
+                        // Ativar o botão de processamento se temos texto
+                        if (transcribedText && transcribedText.trim() !== "") {
+                            processTextButton.disabled = false;
+                            
+                            // Adicionar um pequeno delay e um efeito visual para indicar que o texto pode ser editado
+                            setTimeout(() => {
+                                transcriptionDiv.classList.add('editable-highlight');
+                                setTimeout(() => {
+                                    transcriptionDiv.classList.remove('editable-highlight');
+                                }, 1000);
+                            }, 500);
+                        }
+                    } catch (error) {
+                        showError("Erro ao transcrever áudio: " + error.message);
+                    }
+                    
+                    // Fechar as trilhas de áudio
+                    stream.getTracks().forEach(track => track.stop());
+                });
+                
+                // Iniciar a gravação
+                mediaRecorder.start();
+                recordingStartTime = new Date();
+                recordingTimer = setInterval(updateRecordingTime, 1000);
+                updateRecordingTime();
+                
+                // Atualizar UI
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                updateStatus("Gravando áudio... Clique em 'Parar Gravação' quando terminar.");
+                
+            } catch (error) {
+                startButton.classList.remove('active');
+                showError("Erro ao iniciar gravação: " + error.message);
+            }
+        });
+        
+        // Parar gravação
+        stopButton.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                updateStatus("Finalizando gravação...");
+            }
+        });
+        
+        // Processar texto transcrito
+        processTextButton.addEventListener('click', async () => {
+            // Obter o texto atual do campo editável
+            const currentText = transcriptionDiv.textContent.trim();
+            
+            if (!currentText) {
+                showError("Não há texto para processar. Por favor, faça uma gravação primeiro ou insira um texto.");
+                return;
+            }
+            
+            // Verificar se temos uma chave API válida
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey || !apiKey.startsWith("sk-")) {
+                showError("Chave API da OpenAI não encontrada. Por favor, forneça uma chave válida.");
+                return;
+            }
+            
+            // Atualizar a variável transcribedText com o conteúdo possivelmente editado
+            transcribedText = currentText;
+            
+            // Visual feedback - alterando a aparência do botão
+            processTextButton.classList.add('active');
+            
+            // Obter a opção selecionada
+            const selectedOption = document.querySelector('input[name="processingOption"]:checked').value;
+            
+            // Processar o texto
+            try {
+                updateStatus("Processando texto...");
+                await processTranscribedText(transcribedText, selectedOption);
+            } catch (error) {
+                showError("Erro ao processar texto: " + error.message);
+            } finally {
+                // Remover a classe active após o processamento
+                setTimeout(() => {
+                    processTextButton.classList.remove('active');
+                }, 1000);
+            }
+        });
+        
+        // Função para transcrever o áudio
+        async function transcribeAudio(audioBlob) {
+            try {
+                const apiKey = apiKeyInput.value.trim();
+                
+                // Verificar se temos uma chave API
+                if (!apiKey || !apiKey.startsWith("sk-")) {
+                    throw new Error("Chave API da OpenAI inválida.");
+                }
+                
+                // Criar um FormData para enviar o arquivo
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.webm');
+                formData.append('model', 'whisper-1');
+                
+                updateStatus("Enviando áudio para transcrição...");
+                
+                // Enviar para a API da OpenAI
+                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API da OpenAI retornou erro: ${errorData.error?.message || response.statusText}`);
+                }
+                
+                const data = await response.json();
+                transcribedText = data.text;
+                
+                // Exibir a transcrição
+                transcriptionDiv.textContent = transcribedText;
+                
+                updateStatus("Transcrição concluída com sucesso.");
+                return transcribedText;
+                
+            } catch (error) {
+                throw new Error(error.message);
+            }
+        }
+        
+        // Função para processar o texto transcrito
+        async function processTranscribedText(text, option) {
+            try {
+                const apiKey = apiKeyInput.value.trim();
+                
+                // Verificar se temos uma chave API
+                if (!apiKey || !apiKey.startsWith("sk-")) {
+                    throw new Error("Chave API da OpenAI inválida.");
+                }
+                
+                // Definir o prompt com base na opção selecionada
+                let prompt;
+                switch (option) {
+                    case 'summary':
+                        prompt = "Faça um resumo conciso e claro do seguinte texto:\n\n";
+                        break;
+                    case 'list':
+                        prompt = "Crie uma lista organizada dos principais tópicos e pontos importantes do seguinte texto:\n\n";
+                        break;
+                    case 'mindmap':
+                        prompt = "Crie um mapa mental em formato de texto do seguinte conteúdo, organizando os conceitos principais e suas relações hierárquicas:\n\n";
+                        break;
+                    default:
+                        prompt = "Resumo do seguinte texto:\n\n";
+                }
+                
+                // Criar payload para a API
+                const payload = {
+                    model: "gpt-3.5-turbo",
+                    messages: [
+                        {
+                            role: "system",
+                            content: "Você é um assistente especializado em organizar e processar informações de textos transcritos de áudio."
+                        },
+                        {
+                            role: "user",
+                            content: prompt + text
+                        }
+                    ],
+                    temperature: 0.5,
+                    max_tokens: 1000
+                };
+                
+                updateStatus("Enviando texto para processamento...");
+                
+                // Enviar para a API da OpenAI
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API da OpenAI retornou erro: ${errorData.error?.message || response.statusText}`);
+                }
+                
+                const data = await response.json();
+                const processedText = data.choices[0].message.content;
+                
+                // Exibir o resultado do processamento
+                processedOutputDiv.textContent = processedText;
+                
+                updateStatus("Processamento concluído com sucesso.");
+                return processedText;
+                
+            } catch (error) {
+                throw new Error(error.message);
+            }
+        }
+        
+        // Verificar se temos API Key salva
+        document.addEventListener('DOMContentLoaded', () => {
+            loadApiKey();
+            
+            // Adicionar efeito visual quando os campos editáveis são clicados
+            const editableElements = document.querySelectorAll('.editable');
+            editableElements.forEach(el => {
+                el.addEventListener('focus', () => {
+                    el.style.borderColor = '#3498db';
+                    el.style.boxShadow = '0 0 5px rgba(52, 152, 219, 0.5)';
+                });
+                
+                el.addEventListener('blur', () => {
+                    el.style.borderColor = '#ccc';
+                    el.style.boxShadow = 'none';
+                    
+                    // Se for o campo de transcrição, atualizar o estado de habilitação do botão de processar
+                    if (el.id === 'transcription') {
+                        processTextButton.disabled = el.textContent.trim() === '';
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
